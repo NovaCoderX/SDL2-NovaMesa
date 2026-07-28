@@ -40,7 +40,7 @@
 #include <android/log.h>
 #endif
 
-#if defined(__AMIGAOS3__)
+#if defined(__AMIGA__)
 #include "main/amigaos3/SDL_os3log.h"
 #endif
 
@@ -116,7 +116,7 @@ void SDL_LogInit(void)
         log_function_mutex = SDL_CreateMutex();
     }
 
-#if defined(__AMIGAOS3__)
+#if defined(__AMIGA__)
     SDL_OS3_InitLogging();
 #endif
 }
@@ -129,7 +129,7 @@ void SDL_LogQuit(void)
         log_function_mutex = NULL;
     }
 
-#if defined(__AMIGAOS3__)
+#if defined(__AMIGA__)
     SDL_OS3_QuitLogging();
 #endif
 }

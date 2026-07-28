@@ -25,6 +25,30 @@
 #include "SDL_error.h"
 #include "SDL_error_c.h"
 
+#if defined(__AMIGA__)
+// Provide the POSIX error-string shim that libstdc++ expects
+int __xpg_strerror_r(int errnum, char *buf, size_t buflen)
+{
+    const char *s;
+
+    if (!buf || buflen == 0)
+        return ERANGE;
+
+    s = strerror(errnum);
+    if (!s)
+        return EINVAL;
+
+    if (strlen(s) >= buflen) {
+        strncpy(buf, s, buflen - 1);
+        buf[buflen - 1] = '\0';
+        return ERANGE;   /* truncated, per POSIX */
+    }
+
+    strcpy(buf, s);
+    return 0;
+}
+#endif
+
 int SDL_SetError(SDL_PRINTF_FORMAT_STRING const char *fmt, ...)
 {
     /* Ignore call if invalid format pointer was passed */
