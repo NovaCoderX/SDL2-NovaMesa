@@ -208,10 +208,6 @@
 #if defined(PS2)
 #define __PS2__ 1
 #endif
-#if defined(AMIGA)
-#undef __AMIGAOS3__
-#define __AMIGAOS3__ 1
-#endif
 
 
 /* The NACL compiler defines __native_client__ and __pnacl__

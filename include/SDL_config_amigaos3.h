@@ -128,14 +128,16 @@
 #define SDL_HIDAPI_DISABLED 1
 #define SDL_SENSOR_DISABLED 1
 #define SDL_LOADSO_DISABLED 1
-#define SDL_JOYSTICK_DISABLED 1
 
-// Implementations.
+
+// Implementations
 #define SDL_AUDIO_DRIVER_AMIGAOS3 1
 #define SDL_THREAD_AMIGAOS3 1
 #define SDL_TIMER_AMIGAOS3 1
 #define SDL_VIDEO_DRIVER_AMIGAOS3 1
-#define SDL_VIDEO_OPENGL 1
+//#define SDL_VIDEO_OPENGL 1
 #define SDL_FILESYSTEM_AMIGAOS3 1
+#define SDL_JOYSTICK_AMIGAOS3 1
+//#define SDL_LOGGING_AMIGAOS3 1
 
 #endif /* SDL_config_amigaos3_h_ */
