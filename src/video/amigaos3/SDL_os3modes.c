@@ -39,7 +39,7 @@
 #define MAX_VIDEO_MODE_HEIGHT 1024
 
 
-static SDL_bool OS3_GetDisplayModeData(ULONG modeId, SDL_DisplayMode* mode)
+static SDL_bool OS3_GetDisplayModeData(ULONG modeId, SDL_DisplayMode* mode, SDL_bool desktopMode)
 {
     SDL_DisplayModeData *data;
     ULONG width, height, depth;
@@ -56,22 +56,24 @@ static SDL_bool OS3_GetDisplayModeData(ULONG modeId, SDL_DisplayMode* mode)
     		validMode = SDL_TRUE;
     	}
 
-    	// We do not support modes below this size.
-    	if (width < MIN_VIDEO_MODE_WIDTH || height < MIN_VIDEO_MODE_HEIGHT) {
-    		validMode = SDL_FALSE;
-    	}
+    	if (!desktopMode) {
+			// We do not support modes below this size.
+			if (width < MIN_VIDEO_MODE_WIDTH || height < MIN_VIDEO_MODE_HEIGHT) {
+				validMode = SDL_FALSE;
+			}
 
-    	// Or above this size.
-    	if (width > MAX_VIDEO_MODE_WIDTH || height > MAX_VIDEO_MODE_HEIGHT) {
-    		validMode = SDL_FALSE;
-    	}
+			// Or above this size.
+			if (width > MAX_VIDEO_MODE_WIDTH || height > MAX_VIDEO_MODE_HEIGHT) {
+				validMode = SDL_FALSE;
+			}
 
-    	// Or anything silly.
-    	if (validMode && (width <= 640)) {
-    		// Cross-multiplied equivalent of: height / width < 200 / 320
-    		if ((height * 8) < (width * 5)) {
-    			validMode = SDL_FALSE;
-    		}
+			// Or anything silly.
+			if (validMode && (width <= 640)) {
+				// Cross-multiplied equivalent of: height / width < 200 / 320
+				if ((height * 8) < (width * 5)) {
+					validMode = SDL_FALSE;
+				}
+			}
     	}
     }
 
@@ -118,7 +120,7 @@ void OS3_GetDisplayModes(_THIS, SDL_VideoDisplay* display)
     SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "OS3_GetDisplayModes() - Called\n");
 
     while ((nextid = NextDisplayInfo(nextid)) != INVALID_ID) {
-        if (OS3_GetDisplayModeData(nextid, &mode)) {
+        if (OS3_GetDisplayModeData(nextid, &mode, SDL_FALSE)) {
             if (SDL_AddDisplayMode(display, &mode)) {
             	ULONG width, height, depth;
 
@@ -126,7 +128,7 @@ void OS3_GetDisplayModes(_THIS, SDL_VideoDisplay* display)
             	height = GetCyberIDAttr(CYBRIDATTR_HEIGHT, nextid);
             	depth = GetCyberIDAttr(CYBRIDATTR_DEPTH, nextid);
 
-            	SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "Added display mode: %u - width=%u, height=%u, depth=%u\n",
+            	SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "Added display mode: %lu - width=%lu, height=%lu, depth=%lu\n",
             			nextid, width, height, depth);
             } else {
             	// Rejected, probably just a duplicate.
@@ -145,7 +147,7 @@ int OS3_SetDisplayMode(_THIS, SDL_VideoDisplay* display, SDL_DisplayMode* mode)
 	height = GetCyberIDAttr(CYBRIDATTR_HEIGHT, modeData->modeId);
 	depth = GetCyberIDAttr(CYBRIDATTR_DEPTH, modeData->modeId);
 
-	SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "Requested display mode: %u - width=%u, height=%u, depth=%u\n",
+	SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "Requested display mode: %lu - width=%lu, height=%lu, depth=%lu\n",
 			modeData->modeId, width, height, depth);
 
 	// We won't actually create the screen now, wait until SDL creates the window.
@@ -172,7 +174,7 @@ int OS3_InitModes(_THIS)
     // We should not keep the public screen locked.
     OS3_UnlockPublicScreen(publicScreen);
 
-    if (!OS3_GetDisplayModeData(modeId, &current_mode)) {
+    if (!OS3_GetDisplayModeData(modeId, &current_mode, SDL_TRUE)) {
         SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "Failed to get display mode data for the public screen\n");
         return SDL_SetError("Could not get display mode data for the public screen");
     } else {
@@ -182,7 +184,7 @@ int OS3_InitModes(_THIS)
     	height = GetCyberIDAttr(CYBRIDATTR_HEIGHT, modeId);
     	depth = GetCyberIDAttr(CYBRIDATTR_DEPTH, modeId);
 
-    	SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "Public screen display mode: %u - width=%u, height=%u, depth=%u\n",
+    	SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "Public screen display mode: %lu - width=%lu, height=%lu, depth=%lu\n",
     			modeId,  width, height, depth);
     }
 

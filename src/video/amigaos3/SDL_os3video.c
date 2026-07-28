@@ -50,6 +50,7 @@
 #include "SDL_os3events.h"
 #include "SDL_os3mouse.h"
 #include "SDL_os3keyboard.h"
+#include "SDL_os3messagebox.h"
 
 #define OS3VID_DRIVER_NAME "AmigaOS 3"
 
@@ -147,7 +148,7 @@ static void OS3_SetFunctionPointers(SDL_VideoDevice* device) {
 	device->CreateSDLWindowFrom = NULL;
 	device->SetWindowTitle = OS3_SetWindowTitle;
 	device->SetWindowIcon = NULL;
-	device->SetWindowPosition = OS3_SetWindowPosition;
+	device->SetWindowPosition = NULL;
 	device->SetWindowSize = OS3_SetWindowSize;
 	device->SetWindowMinimumSize = NULL;
 	device->SetWindowMaximumSize = NULL;
@@ -161,7 +162,7 @@ static void OS3_SetFunctionPointers(SDL_VideoDevice* device) {
 	device->MaximizeWindow = NULL;
 	device->MinimizeWindow = NULL;
 	device->RestoreWindow = NULL;
-	device->SetWindowBordered = OS3_SetWindowBordered;
+	device->SetWindowBordered = NULL;
 	device->SetWindowAlwaysOnTop = OS3_SetWindowAlwaysOnTop;
 	device->SetWindowFullscreen = OS3_SetWindowFullscreen;
 	device->SetWindowGammaRamp = NULL;
@@ -173,7 +174,7 @@ static void OS3_SetFunctionPointers(SDL_VideoDevice* device) {
 	device->UpdateWindowFramebuffer = OS3_UpdateWindowFramebuffer;
 	device->DestroyWindowFramebuffer = OS3_DestroyWindowFramebuffer;
 	device->OnWindowEnter = NULL;
-	device->FlashWindow = OS3_FlashWindow;
+	device->FlashWindow = NULL;
 	device->GetWindowWMInfo = OS3_GetWindowWMInfo;
 
 	//  OpenGL support
@@ -234,7 +235,7 @@ static SDL_VideoDevice* OS3_CreateDevice(void) {
 
 VideoBootStrap OS3_bootstrap = {
 OS3VID_DRIVER_NAME, "AmigaOS 3 video driver", OS3_CreateDevice,
-NULL /* no ShowMessageBox implementation */
+OS3_ShowMessageBox
 };
 
 int OS3_VideoInit(_THIS) {

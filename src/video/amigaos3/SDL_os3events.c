@@ -28,6 +28,7 @@
 #include <proto/keymap.h>
 #include <proto/wb.h>
 #include <proto/lowlevel.h>
+#include <proto/input.h>
 #include <clib/alib_protos.h>
 #include <devices/input.h>
 #include <SDI_interrupt.h>
@@ -54,6 +55,8 @@
 
 extern OS3_GlobalMouseState globalMouseState;
 
+struct Device *InputBase = NULL;
+
 static struct Interrupt *inputHandler = NULL;
 static struct MsgPort *inputPort = NULL;
 static struct IOStdReq *inputRequest = NULL;
@@ -68,36 +71,36 @@ static SDL_bool isWindowActive = SDL_FALSE;
 static SDL_bool isMouseInputCaptured = SDL_FALSE;
 static SDL_bool isKeyboardInputCaptured = SDL_FALSE;
 
-/*struct QualifierItem
+static void OS3_SyncKeyModifier(SDL_bool held, SDL_Scancode scancode)
 {
-    UWORD qualifier;
-    SDL_Keymod keymod;
-    const char* name;
-};*/
+    const Uint8 *keystate = SDL_GetKeyboardState(NULL);
+    SDL_bool sdlHeld = keystate[scancode] ? SDL_TRUE : SDL_FALSE;
+
+    if (held != sdlHeld) {
+        /* Synthesize the transition the window never received.
+           SDL_SendKeyboardKey updates both the key state array and
+           the KMOD_* modifier mask for modifier scancodes. */
+        SDL_SendKeyboardKey(held ? SDL_PRESSED : SDL_RELEASED, scancode);
+    }
+}
 
 static void OS3_SyncKeyModifiers(_THIS)
 {
-	// TODO - not resolving with current Bebbo NDK headers.
+    const UWORD q = PeekQualifier();
 
-	/*int i;
-    const UWORD qualifiers = PeekQualifier();
+    OS3_SyncKeyModifier((q & IEQUALIFIER_LSHIFT)   != 0, SDL_SCANCODE_LSHIFT);
+    OS3_SyncKeyModifier((q & IEQUALIFIER_RSHIFT)   != 0, SDL_SCANCODE_RSHIFT);
+    OS3_SyncKeyModifier((q & IEQUALIFIER_CONTROL)  != 0, SDL_SCANCODE_LCTRL);
+    OS3_SyncKeyModifier((q & IEQUALIFIER_LALT)     != 0, SDL_SCANCODE_LALT);
+    OS3_SyncKeyModifier((q & IEQUALIFIER_RALT)     != 0, SDL_SCANCODE_RALT);
+    OS3_SyncKeyModifier((q & IEQUALIFIER_LCOMMAND) != 0, SDL_SCANCODE_LGUI);
+    OS3_SyncKeyModifier((q & IEQUALIFIER_RCOMMAND) != 0, SDL_SCANCODE_RGUI);
 
-    const struct QualifierItem map[] = {
-        { IEQUALIFIER_LSHIFT,   KMOD_LSHIFT, "Left Shift"   },
-        { IEQUALIFIER_RSHIFT,   KMOD_RSHIFT, "Right Shift"  },
-        { IEQUALIFIER_CAPSLOCK, KMOD_CAPS,   "Capslock"     },
-        { IEQUALIFIER_CONTROL,  KMOD_CTRL,   "Control"      },
-        { IEQUALIFIER_LALT,     KMOD_LALT,   "Left Alt"     },
-        { IEQUALIFIER_RALT,     KMOD_RALT,   "Right Alt"    },
-        { IEQUALIFIER_LCOMMAND, KMOD_LGUI,   "Left Amiga"   },
-        { IEQUALIFIER_RCOMMAND, KMOD_RGUI,   "Right Amiga"  }
-    };
-
-    SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "Current qualifiers: %u\n", qualifiers);
-
-    for (i = 0; i < SDL_arraysize(map); i++) {
-        SDL_ToggleModState(map[i].keymod, (qualifiers & map[i].qualifier) != 0);
-    }*/
+    /* Caps Lock is a toggle state, not a held key - sync the mod
+       bit directly rather than synthesizing press/release events */
+    if (((q & IEQUALIFIER_CAPSLOCK) != 0) != ((SDL_GetModState() & KMOD_CAPS) != 0)) {
+        SDL_ToggleModState(KMOD_CAPS, (q & IEQUALIFIER_CAPSLOCK) != 0);
+    }
 }
 
 static void OS3_DetectNumLock(const SDL_Scancode s)
@@ -198,7 +201,7 @@ void OS3_PumpEvents(_THIS)
 			struct IntuiMessage* imsg;
 			struct InputEvent* event;
 
-			while ((imsg = (struct IntuiMessage *)GetMsg(msgPort))) {
+			while ((imsg = (struct IntuiMessage*)GetMsg(msgPort))) {
 			    ULONG class = imsg->Class;
 			    ReplyMsg((struct Message*)imsg);
 
@@ -221,6 +224,21 @@ void OS3_PumpEvents(_THIS)
 			        	isWindowActive = SDL_FALSE;
 			            SDL_SendWindowEvent(sdlwin, SDL_WINDOWEVENT_FOCUS_LOST, 0, 0);
 			            break;
+
+			        case IDCMP_NEWSIZE: {
+			            int w, h;
+
+			            w = syswin->Width  - syswin->BorderLeft - syswin->BorderRight;
+			            h = syswin->Height - syswin->BorderTop  - syswin->BorderBottom;
+			            SDL_SendWindowEvent(sdlwin, SDL_WINDOWEVENT_SIZE_CHANGED, w, h);
+
+#ifdef SDL_VIDEO_OPENGL
+			            if (data->glContext) {
+			            	OS3_GL_UpdateContext(_this, sdlwin);
+			            }
+#endif
+			            break;
+			        }
 			    }
 			}
 
@@ -235,12 +253,55 @@ void OS3_PumpEvents(_THIS)
 				if (SDL_GetRelativeMouseMode()) {
 					SDL_SendMouseMotion(sdlwin, 0, 1, mx, my);
 				} else {
-					/* Absolute: read directly from window struct — no IDCMP needed */
 					int wx = syswin->MouseX - syswin->BorderLeft;
 					int wy = syswin->MouseY - syswin->BorderTop;
-					globalMouseState.x = syswin->WScreen->MouseX;
-					globalMouseState.y = syswin->WScreen->MouseY;
-					SDL_SendMouseMotion(sdlwin, 0, 0, wx, wy);
+					int innerW = syswin->Width  - syswin->BorderLeft - syswin->BorderRight;
+					int innerH = syswin->Height - syswin->BorderTop  - syswin->BorderBottom;
+
+					/* The pointer is effectively confined to the window when:
+						 - fullscreen: the backdrop window covers the whole screen, OR
+						 - the app has grabbed the mouse: desktop SDL physically pins
+						   the pointer inside the window, so we emulate the same
+						   contract in coordinate space (Intuition cannot confine
+						   the real pointer for us).*/
+					SDL_bool confined = (data->customScreen != NULL) || isMouseInputCaptured;
+
+					if (confined) {
+						/* Clamp to the window's inner area. This keeps edge
+						   coordinates deterministic regardless of mouse speed,
+						   keeps the free axis sliding along a pinned edge, and
+						   tolerates pointer sources (FS-UAE host integration,
+						   certain RTG clamps) that report one-past-the-edge
+						   values - byte-for-byte what a desktop app observes
+						   under real pointer confinement.*/
+						if (wx < 0)            wx = 0;
+						else if (wx >= innerW) wx = innerW - 1;
+
+						if (wy < 0)            wy = 0;
+						else if (wy >= innerH) wy = innerH - 1;
+
+						/* A confined pointer always holds mouse focus */
+						if (SDL_GetMouseFocus() != sdlwin) {
+							SDL_SetMouseFocus(sdlwin);
+						}
+
+						SDL_SendMouseMotion(sdlwin, 0, 0, wx, wy);
+					} else {
+						/* Windowed mode and ungrabbed: genuine enter/leave semantics */
+						SDL_bool inside = (wx >= 0 && wy >= 0 && wx < innerW && wy < innerH);
+
+						if (inside) {
+							if (SDL_GetMouseFocus() != sdlwin) {
+								SDL_SetMouseFocus(sdlwin);      /* sends WINDOWEVENT_ENTER, sets MOUSE_FOCUS */
+							}
+							SDL_SendMouseMotion(sdlwin, 0, 0, wx, wy);
+						} else {
+							if (SDL_GetMouseFocus() == sdlwin) {
+								SDL_SetMouseFocus(NULL);        /* sends WINDOWEVENT_LEAVE, clears MOUSE_FOCUS */
+							}
+							/* don't send motion while outside - matches desktop SDL behaviour */
+						}
+					}
 				}
 			}
 
@@ -312,6 +373,24 @@ void OS3_SetKeyboardGrab(SDL_bool grabbed) {
 	SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "OS3_SetKeyboardGrab(%s)\n", grabbed ? "enabled" : "disabled");
 
 	isKeyboardInputCaptured = grabbed;
+}
+
+void OS3_WarpSystemPointerAbsolute(int x, int y)
+{
+    struct InputEvent ie;
+
+    if (inputRequest) {
+		SDL_memset(&ie, 0, sizeof(ie));
+		ie.ie_Class = IECLASS_POINTERPOS;
+		ie.ie_Code  = IECODE_NOBUTTON;
+		ie.ie_position.ie_xy.ie_x = x;
+		ie.ie_position.ie_xy.ie_y = y;
+
+		inputRequest->io_Command = IND_WRITEEVENT;
+		inputRequest->io_Data    = (APTR)&ie;
+		inputRequest->io_Length  = sizeof(ie);
+		DoIO((struct IORequest *)inputRequest);
+    }
 }
 
 static void IN_AddEvent(struct InputEvent *event)
@@ -395,9 +474,14 @@ static int IN_InitInputHandler(void)
 		return SDL_SetError("Could not create input request");
     }
 
-	if (OpenDevice("input.device", 0, (struct IORequest*)inputRequest, 0) != 0) {
+	if (OpenDevice((CONST_STRPTR)"input.device", 0, (struct IORequest*)inputRequest, 0) != 0) {
 		return SDL_SetError("Could not open input.device");
 	}
+
+	/* input.device exports PeekQualifier() as a direct-call function;
+	   the inline stub needs the device base in InputBase (same pattern
+	   as TimerBase for timer.device's ReadEClock) */
+	InputBase = inputRequest->io_Device;
 
     inputHandler->is_Node.ln_Type = NT_INTERRUPT;
 	inputHandler->is_Node.ln_Pri = 100;
@@ -420,11 +504,13 @@ static void IN_ShutdownInputHandler(void)
 
 	if (inputRequest) {
 		inputRequest->io_Command = IND_REMHANDLER;
+		inputRequest->io_Data    = (APTR)inputHandler;   /* identify which handler */
 		DoIO((struct IORequest*)inputRequest);
 
 		CloseDevice((struct IORequest*)inputRequest);
 		DeleteStdIO(inputRequest);
 		inputRequest = NULL;
+		InputBase = NULL;
 	}
 
     if (inputPort) {

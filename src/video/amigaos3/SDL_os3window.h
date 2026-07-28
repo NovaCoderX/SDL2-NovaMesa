@@ -37,16 +37,13 @@ typedef struct {
 
 extern int OS3_CreateWindow(_THIS, SDL_Window* window);
 extern void OS3_SetWindowTitle(_THIS, SDL_Window* window);
-extern void OS3_SetWindowPosition(_THIS, SDL_Window* window);
 extern void OS3_SetWindowSize(_THIS, SDL_Window* window);
 extern void OS3_RaiseWindow(_THIS, SDL_Window* window);
 extern void OS3_SetWindowAlwaysOnTop(_THIS, SDL_Window* window, SDL_bool on_top);
-extern void OS3_SetWindowBordered(_THIS, SDL_Window* window, SDL_bool bordered);
 extern void OS3_SetWindowFullscreen(_THIS, SDL_Window* window, SDL_VideoDisplay* display, SDL_bool fullscreen);
 extern void OS3_SetWindowMouseGrab(_THIS, SDL_Window* window, SDL_bool grabbed);
 extern void OS3_SetWindowKeyboardGrab(_THIS, SDL_Window* window, SDL_bool grabbed);
 extern void OS3_DestroyWindow(_THIS, SDL_Window* window);
-extern int OS3_FlashWindow(_THIS, SDL_Window* window, SDL_FlashOperation operation);
 extern int OS3_GetWindowBordersSize(_THIS, SDL_Window* window, int* top, int* left, int* bottom, int* right);
 extern SDL_bool OS3_GetWindowWMInfo(_THIS, SDL_Window* window, struct SDL_SysWMinfo* info);
 

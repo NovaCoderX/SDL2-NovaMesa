@@ -26,6 +26,7 @@
 extern void OS3_PumpEvents(_THIS);
 extern void OS3_SetMouseGrab(SDL_bool grabbed);
 extern void OS3_SetKeyboardGrab(SDL_bool grabbed);
+extern void OS3_WarpSystemPointerAbsolute(int x, int y);
 extern int OS3_InitEvents(_THIS);
 extern void OS3_QuitEvents(_THIS);
 

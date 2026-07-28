@@ -28,11 +28,11 @@
 #include "SDL_os3mouse.h"
 #include "SDL_os3video.h"
 #include "SDL_os3window.h"
+#include "SDL_os3events.h"
 
 #include "SDL_hints.h"
 #include "../../events/SDL_mouse_c.h"
-
-#include <devices/input.h>
+#include "../../events/SDL_keyboard_c.h"
 
 OS3_GlobalMouseState globalMouseState;
 
@@ -60,32 +60,88 @@ static SDL_Cursor* OS3_CreateSystemCursor(SDL_SystemCursor id) {
 	return OS3_CreateCursorInternal();
 }
 
+static int OS3_ShowCursor(SDL_Cursor* cursor) {
+    _THIS = SDL_GetVideoDevice();
+    SDL_Window* sdlwin;
+
+    // Get the window the mouse is currently physically inside
+    SDL_Window* mouse_focus = SDL_GetMouseFocus();
+
+    for (sdlwin = _this->windows; sdlwin; sdlwin = sdlwin->next) {
+        SDL_WindowData* data = sdlwin->driverdata;
+
+        if (data && data->syswin) {
+            // ONLY apply the blank cursor if SDL requests it (NULL)
+            // AND the mouse is currently inside our specific window bounds.
+            if (cursor == NULL && mouse_focus == sdlwin) {
+                SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "Hiding hardware cursor\n");
+                SetPointer(data->syswin, _blankCursor, 1, 1, 0, 0);
+            }
+            else {
+                // If the cursor is requested visible, OR the mouse has physically left
+                // our window bounds, explicitly clear the blank pointer.
+                SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "Showing hardware cursor\n");
+                ClearPointer(data->syswin);
+            }
+        }
+    }
+
+    return 0;
+}
+
 static void OS3_FreeCursor(SDL_Cursor* cursor) {
 	if (cursor) {
 		SDL_free(cursor);
 	}
 }
 
-static int OS3_ShowCursor(SDL_Cursor* cursor) {
-	_THIS = SDL_GetVideoDevice();
-	SDL_Window* sdlwin;
+static void OS3_WarpMouse(SDL_Window* sdlwin, int x, int y)
+{
+	SDL_WindowData *data = sdlwin->driverdata;
 
-	for (sdlwin = _this->windows; sdlwin; sdlwin = sdlwin->next) {
-		SDL_WindowData* data = sdlwin->driverdata;
+    SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "OS3_WarpMouse(%d,%d)\n", x, y);
 
-		if (data && data->syswin) {
-			if (cursor == NULL) {
+	if (data && data->syswin) {
+		struct Window* syswin = data->syswin;
 
-				SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "Hiding hardware cursor\n");
-				SetPointer(data->syswin, _blankCursor, 1, 1, 0, 0);
-			} else {
-				SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "Showing hardware cursor\n");
-				ClearPointer(data->syswin);
-			}
-		}
+		OS3_WarpSystemPointerAbsolute(syswin->LeftEdge + syswin->BorderLeft + x,
+				syswin->TopEdge  + syswin->BorderTop  + y);
 	}
+}
 
-	return 0;
+static int OS3_WarpMouseGlobal(int x, int y)
+{
+    /* Global coordinates = the screen's coordinate space. On this
+       single-display port that is the screen our focused window
+       lives on (for fullscreen, global == window space anyway). */
+    SDL_Window *sdlwin = SDL_GetMouseFocus();
+    int result = -1;
+
+    SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "OS3_WarpMouseGlobal(%d,%d)\n", x, y);
+
+    if (!sdlwin) {
+        sdlwin = SDL_GetKeyboardFocus();
+    }
+
+    /* Clamp into the screen so what we report matches what Intuition
+       will actually do with an out-of-range position */
+    if (sdlwin) {
+        SDL_WindowData *data = sdlwin->driverdata;
+        if (data && data->syswin && data->syswin->WScreen) {
+            struct Screen *scr = data->syswin->WScreen;
+
+            if (x < 0)                 x = 0;
+            else if (x >= scr->Width)  x = scr->Width  - 1;
+
+            if (y < 0)                 y = 0;
+            else if (y >= scr->Height) y = scr->Height - 1;
+
+            OS3_WarpSystemPointerAbsolute(x, y);
+            result = 0;
+        }
+    }
+
+    return result;
 }
 
 static int OS3_SetRelativeMouseMode(SDL_bool enabled) {
@@ -95,7 +151,7 @@ static int OS3_SetRelativeMouseMode(SDL_bool enabled) {
 	return 0;
 }
 
-static int OS3_CaptureMouse(SDL_Window* window) {
+static int OS3_CaptureMouse(SDL_Window* sdlwin) {
 	SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "OS3_CaptureMouse() - Called\n");
 
 	// Supported.
@@ -146,8 +202,8 @@ void OS3_InitMouse(_THIS) {
 	mouse->CreateSystemCursor = OS3_CreateSystemCursor;
 	mouse->ShowCursor = OS3_ShowCursor;
 	mouse->FreeCursor = OS3_FreeCursor;
-	mouse->WarpMouse = NULL;
-	mouse->WarpMouseGlobal = NULL;
+	mouse->WarpMouse = OS3_WarpMouse;
+	mouse->WarpMouseGlobal = OS3_WarpMouseGlobal;
 	mouse->SetRelativeMouseMode = OS3_SetRelativeMouseMode;
 	mouse->CaptureMouse = OS3_CaptureMouse;
 	mouse->GetGlobalMouseState = OS3_GetGlobalMouseState;

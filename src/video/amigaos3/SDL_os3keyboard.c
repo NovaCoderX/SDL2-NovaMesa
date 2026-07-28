@@ -171,7 +171,7 @@ void OS3_InitKeyboard(_THIS) {
 		if (locale) {
 			const ULONG codeSet = locale->loc_CodeSet ? locale->loc_CodeSet : 4;
 
-			SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "Default code set %du\n", codeSet);
+			SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "Default code set %lu\n", codeSet);
 
 			unicodeMappingTable = (ULONG*) ObtainCharsetInfo(DFCS_NUMBER, codeSet, DFCS_MAPTABLE);
 

@@ -150,7 +150,49 @@ static SDL_bool OS3_SetupWindowData(SDL_Window* sdlwin, struct Screen* customScr
     data->customScreen = customScreen;
     data->syswin = syswin;
 
+#ifdef DEBUG_VIDEO_VERBOSE
+    if (data->customScreen) {
+    	SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "Updated window data - customScreen: %p %dx%d, syswin %dx%d with borders T%d B%d L%d R%d, sdlwin %dx%d",
+			data->customScreen,
+			data->customScreen ? data->customScreen->Width  : -1,
+			data->customScreen ? data->customScreen->Height : -1,
+			syswin->Width, syswin->Height,
+			syswin->BorderTop, syswin->BorderBottom,
+			syswin->BorderLeft, syswin->BorderRight,
+			sdlwin->w, sdlwin->h);
+    } else {
+    	SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "Updated window data - syswin %dx%d with borders T%d B%d L%d R%d, sdlwin %dx%d",
+			syswin->Width, syswin->Height,
+			syswin->BorderTop, syswin->BorderBottom,
+			syswin->BorderLeft, syswin->BorderRight,
+			sdlwin->w, sdlwin->h);
+    }
+#endif
+
     return SDL_TRUE;
+}
+
+static void OS3_SeedMousePosition(SDL_Window *sdlwin, struct Window *syswin)
+{
+    /* Until the user moves the mouse, the input handler accumulates no
+       deltas and no motion event is sent - SDL believes the pointer is
+       at (0,0) while the real Intuition pointer sits wherever the user
+       last left it (e.g. screen centre after a Workbench double-click).
+       Seed SDL's state with the true position so the app's cursor
+       starts in the right place. Desktop backends do the equivalent by
+       querying the OS pointer on window creation/focus. */
+    int wx = syswin->MouseX - syswin->BorderLeft;
+    int wy = syswin->MouseY - syswin->BorderTop;
+    int innerW = syswin->Width  - syswin->BorderLeft - syswin->BorderRight;
+    int innerH = syswin->Height - syswin->BorderTop  - syswin->BorderBottom;
+
+    /* Clamp - matches the confined-pointer path in PumpEvents */
+    if (wx < 0)            wx = 0;
+    else if (wx >= innerW) wx = innerW - 1;
+    if (wy < 0)            wy = 0;
+    else if (wy >= innerH) wy = innerH - 1;
+
+    SDL_SendMouseMotion(sdlwin, 0, 0, wx, wy);
 }
 
 static SDL_bool OS3_CreateSystemWindow(_THIS, SDL_Window* sdlwin, SDL_bool fullscreen)
@@ -194,7 +236,6 @@ static SDL_bool OS3_CreateSystemWindow(_THIS, SDL_Window* sdlwin, SDL_bool fulls
 		syswin = OpenWindowTags(
 			NULL,
 			WA_CustomScreen, (ULONG)screen,
-			WA_Title, (ULONG)sdlwin->title,
 			WA_Left, box.x,
 			WA_Top, box.y,
 			WA_Width, box.w,
@@ -227,7 +268,7 @@ static SDL_bool OS3_CreateSystemWindow(_THIS, SDL_Window* sdlwin, SDL_bool fulls
 			WA_NoCareRefresh, TRUE,
 			WA_ReportMouse, FALSE,
 			WA_RMBTrap, TRUE,
-			WA_IDCMP, IDCMP_CLOSEWINDOW|IDCMP_ACTIVEWINDOW|IDCMP_INACTIVEWINDOW,
+			WA_IDCMP, IDCMP_CLOSEWINDOW|IDCMP_ACTIVEWINDOW|IDCMP_INACTIVEWINDOW|IDCMP_NEWSIZE,
 			TAG_DONE);
 
 		// Finished with this now.
@@ -256,6 +297,19 @@ static SDL_bool OS3_CreateSystemWindow(_THIS, SDL_Window* sdlwin, SDL_bool fulls
 		SetAPen(syswin->RPort, blackPen);
 		RectFill(syswin->RPort, 0, 0, syswin->Width - 1, syswin->Height - 1);
 		ReleasePen(screen->ViewPort.ColorMap, blackPen);
+	} else {
+		// In windowed mode on a public screen.
+		ULONG blackPen = ObtainBestPen(syswin->WScreen->ViewPort.ColorMap, 0, 0, 0, TAG_DONE);
+		SetAPen(syswin->RPort, blackPen);
+
+		// Fill only the inner window area to preserve window borders and gadgets.
+		RectFill(syswin->RPort,
+				 syswin->BorderLeft,
+				 syswin->BorderTop,
+				 syswin->Width - syswin->BorderRight - 1,
+				 syswin->Height - syswin->BorderBottom - 1);
+
+		ReleasePen(syswin->WScreen->ViewPort.ColorMap, blackPen);
 	}
 
 	// Setup the window data structure.
@@ -281,6 +335,7 @@ static SDL_bool OS3_CreateSystemWindow(_THIS, SDL_Window* sdlwin, SDL_bool fulls
 
 	WindowToFront(syswin);
 	ActivateWindow(syswin);
+	OS3_SeedMousePosition(sdlwin, syswin);
 
 	// All is cool.
     return SDL_TRUE;
@@ -419,48 +474,23 @@ void OS3_SetWindowTitle(_THIS, SDL_Window* sdlwin)
     }
 }
 
-void OS3_SetWindowBox(_THIS, SDL_Window* sdlwin)
+void OS3_SetWindowSize(_THIS, SDL_Window *sdlwin)
 {
     SDL_WindowData* data = sdlwin->driverdata;
 
-	if (data->customScreen) {
-		SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "Fullscreen window, ignoring size request\n");
-	} else {
-		if (data->syswin) {
-			SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "OS3_SetWindowBox() - not yet supported, skipping...\n");
+    if (data && data->syswin && (!data->customScreen)) {
+		struct Window* syswin = data->syswin;
 
-			/* TODO: SetWindowAttrs/SetWindowAttrsA not resolving with current Bebbo NDK headers.
-			   Revisit after GCC 13.4 toolchain migration.
+		SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "New window size width=%d, height=%d\n", sdlwin->w, sdlwin->h);
 
-			LONG ret = SetWindowAttrs(data->syswin,
-				WA_Left,        window->x,
-				WA_Top,         window->y,
-				WA_InnerWidth,  window->w,
-				WA_InnerHeight, window->h,
-				TAG_DONE);
+		/* ChangeWindowBox takes OUTER dimensions - add the borders */
+		ChangeWindowBox(syswin,
+			syswin->LeftEdge, syswin->TopEdge,
+			sdlwin->w + syswin->BorderLeft + syswin->BorderRight,
+			sdlwin->h + syswin->BorderTop  + syswin->BorderBottom);
 
-			if (ret) {
-				SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "SetWindowAttrs() returned: %d\n", ret);
-			}
-
-			// Use this only after GL context resizing is actually wired up
-			if (data->glContext) {
-				OS3_GL_UpdateContext(_this, window); - needs to check for an error!
-			}*/
-		}
+		/* NOTE: asynchronous - completion arrives as IDCMP_NEWSIZE */
     }
-}
-void OS3_SetWindowPosition(_THIS, SDL_Window* sdlwin)
-{
-	SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "New window position x=%d, y=%d\n", sdlwin->x, sdlwin->y);
-	OS3_SetWindowBox(_this, sdlwin);
-}
-
-void OS3_SetWindowSize(_THIS, SDL_Window* sdlwin)
-{
-	SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "New window size width=%d, height=%d\n", sdlwin->w, sdlwin->h);
-
-	// TODO - needs to call OS3_GL_UpdateContext if opeengl win
 }
 
 void OS3_RaiseWindow(_THIS, SDL_Window* sdlwin)
@@ -468,8 +498,6 @@ void OS3_RaiseWindow(_THIS, SDL_Window* sdlwin)
     SDL_WindowData* data = sdlwin->driverdata;
 
     if (data->syswin) {
-    	SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "Raising window '%s'\n", sdlwin->title);
-
         WindowToFront(data->syswin);
         ActivateWindow(data->syswin);
     }
@@ -561,13 +589,6 @@ int OS3_GetWindowBordersSize(_THIS, SDL_Window* sdlwin, int* top, int* left, int
     return 0;
 }
 
-void OS3_SetWindowBordered(_THIS, SDL_Window* sdlwin, SDL_bool bordered)
-{
-	SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "OS3_SetWindowBordered() - Called for '%s'\n", sdlwin->title);
-
-	// TODO
-}
-
 void OS3_SetWindowAlwaysOnTop(_THIS, SDL_Window* sdlwin, SDL_bool on_top)
 {
     SDL_WindowData* data = sdlwin->driverdata;
@@ -575,31 +596,6 @@ void OS3_SetWindowAlwaysOnTop(_THIS, SDL_Window* sdlwin, SDL_bool on_top)
     if (data->syswin && on_top) {
         WindowToFront(data->syswin);
     }
-}
-
-static void OS3_FlashWindowPrivate(_THIS, struct Window* sdlwin)
-{
-	// TODO
-}
-
-int OS3_FlashWindow(_THIS, SDL_Window* sdlwin, SDL_FlashOperation operation)
-{
-    SDL_WindowData* data = sdlwin->driverdata;
-
-	SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "OS3_FlashWindow() - Called for '%s'\n", sdlwin->title);
-
-    if (data->syswin) {
-        switch (operation) {
-            case SDL_FLASH_BRIEFLY:
-            case SDL_FLASH_UNTIL_FOCUSED:
-                OS3_FlashWindowPrivate(_this, data->syswin);
-                break;
-            case SDL_FLASH_CANCEL:
-                break;
-        }
-    }
-
-    return 0;
 }
 
 #endif /* SDL_VIDEO_DRIVER_AMIGAOS3 */
