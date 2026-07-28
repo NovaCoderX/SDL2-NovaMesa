@@ -34,7 +34,6 @@ extern "C" {
 #endif
 
 struct _SDL_JoystickDriver;
-struct SDL_SteamVirtualGamepadInfo;
 extern char SDL_joystick_magic;
 
 /* Initialization and shutdown functions */
@@ -135,9 +134,6 @@ extern SDL_bool SDL_IsJoystickXInput(SDL_JoystickGUID guid);
 /* Function to return whether a joystick guid comes from the WGI driver */
 extern SDL_bool SDL_IsJoystickWGI(SDL_JoystickGUID guid);
 
-/* Function to return whether a joystick guid comes from the HIDAPI driver */
-extern SDL_bool SDL_IsJoystickHIDAPI(SDL_JoystickGUID guid);
-
 /* Function to return whether a joystick guid comes from the MFI driver */
 extern SDL_bool SDL_IsJoystickMFI(SDL_JoystickGUID guid);
 
@@ -146,9 +142,6 @@ extern SDL_bool SDL_IsJoystickRAWINPUT(SDL_JoystickGUID guid);
 
 /* Function to return whether a joystick guid comes from the Virtual driver */
 extern SDL_bool SDL_IsJoystickVirtual(SDL_JoystickGUID guid);
-
-/* Function to return whether a joystick should be ignored */
-extern SDL_bool SDL_ShouldIgnoreJoystick(const char *name, SDL_JoystickGUID guid);
 
 /* Function to return whether a joystick name and GUID is a game controller  */
 extern SDL_bool SDL_IsGameControllerNameAndGUID(const char *name, SDL_JoystickGUID guid);
@@ -160,8 +153,6 @@ extern SDL_bool SDL_ShouldIgnoreGameController(const char *name, SDL_JoystickGUI
 extern void SDL_GameControllerHandleDelayedGuideButton(SDL_Joystick *joystick);
 
 /* Internal event queueing functions */
-extern void SDL_PrivateJoystickAddTouchpad(SDL_Joystick *joystick, int nfingers);
-extern void SDL_PrivateJoystickAddSensor(SDL_Joystick *joystick, SDL_SensorType type, float rate);
 extern void SDL_PrivateJoystickAdded(SDL_JoystickID device_instance);
 extern void SDL_PrivateJoystickRemoved(SDL_JoystickID device_instance);
 extern void SDL_PrivateJoystickForceRecentering(SDL_Joystick *joystick);
@@ -179,9 +170,6 @@ extern int SDL_PrivateJoystickSensor(SDL_Joystick *joystick,
                                      SDL_SensorType type, Uint64 timestamp_us, const float *data, int num_values);
 extern void SDL_PrivateJoystickBatteryLevel(SDL_Joystick *joystick,
                                             SDL_JoystickPowerLevel ePowerLevel);
-
-/* Function to get the Steam virtual gamepad info for a joystick */
-extern const struct SDL_SteamVirtualGamepadInfo *SDL_GetJoystickInstanceVirtualGamepadInfo(SDL_JoystickID instance_id);
 
 /* Internal sanity checking functions */
 extern SDL_bool SDL_PrivateJoystickValid(SDL_Joystick *joystick);
@@ -237,31 +225,6 @@ typedef struct _SDL_GamepadMapping
 /* Function to get autodetected gamepad controller mapping from the driver */
 extern SDL_bool SDL_PrivateJoystickGetAutoGamepadMapping(int device_index,
                                                          SDL_GamepadMapping *out);
-
-
-typedef struct
-{
-    const char *included_hint_name;
-    int num_included_entries;
-    int max_included_entries;
-    Uint32 *included_entries;
-
-    const char *excluded_hint_name;
-    int num_excluded_entries;
-    int max_excluded_entries;
-    Uint32 *excluded_entries;
-
-    int num_initial_entries;
-    Uint32 *initial_entries;
-
-    SDL_bool initialized;
-} SDL_vidpid_list;
-
-extern void SDL_LoadVIDPIDList(SDL_vidpid_list *list);
-extern void SDL_LoadVIDPIDListFromHints(SDL_vidpid_list *list, const char *included_list, const char *excluded_list);
-extern SDL_bool SDL_VIDPIDInList(Uint16 vendor_id, Uint16 product_id, const SDL_vidpid_list *list);
-extern void SDL_FreeVIDPIDList(SDL_vidpid_list *list);
-
 /* This is in SDL_gamecontroller.c */
 extern SDL_GameControllerType SDL_GetGameControllerTypeFromString(const char *str);
 

@@ -79,7 +79,6 @@ struct _SDL_Joystick
     char *serial _guarded;               /* Joystick serial */
     SDL_JoystickGUID guid _guarded;      /* Joystick guid */
     Uint16 firmware_version _guarded;    /* Firmware version, if available */
-    Uint64 steam_handle _guarded;        /* Steam controller API handle */
 
     int naxes _guarded; /* Number of axis controls on the joystick */
     SDL_JoystickAxisInfo *axes _guarded;
@@ -144,9 +143,6 @@ struct _SDL_Joystick
 #define SDL_JOYCAP_LED             0x01
 #define SDL_JOYCAP_RUMBLE          0x02
 #define SDL_JOYCAP_RUMBLE_TRIGGERS 0x04
-
-/* Macro to combine a USB vendor ID and product ID into a single Uint32 value */
-#define MAKE_VIDPID(VID, PID) (((Uint32)(VID)) << 16 | (PID))
 
 typedef struct _SDL_JoystickDriver
 {
@@ -253,6 +249,7 @@ extern SDL_JoystickDriver SDL_PS2_JoystickDriver;
 extern SDL_JoystickDriver SDL_PSP_JoystickDriver;
 extern SDL_JoystickDriver SDL_VITA_JoystickDriver;
 extern SDL_JoystickDriver SDL_N3DS_JoystickDriver;
+extern SDL_JoystickDriver SDL_AMIGAOS3_JoystickDriver;
 
 /* Ends C function definitions when using C++ */
 #ifdef __cplusplus
