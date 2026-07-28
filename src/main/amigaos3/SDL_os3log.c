@@ -4,7 +4,7 @@
 
 static FILE* logFile = NULL;
 
-
+#ifdef SDL_LOGGING_AMIGAOS3
 static const char *GetPriorityName(SDL_LogPriority priority)
 {
     switch (priority)
@@ -42,29 +42,30 @@ static void SDLCALL AmigaLogOutput(
     SDL_LogPriority priority,
     const char *message)
 {
-    if (logFile)
-    {
-        fprintf(logFile,
-                "[%-8s][%-8s] %s\n",
-                GetCategoryName(category),
-                GetPriorityName(priority),
-                message);
-    }
+	if (logFile) {
+		fprintf(logFile,
+				"[%-8s][%-8s] %s\n",
+				GetCategoryName(category),
+				GetPriorityName(priority),
+				message);
+		fflush(logFile);
+	}
 }
+#endif
 
 void SDL_OS3_InitLogging(void)
 {
-    if (!logFile) {
+#ifdef SDL_LOGGING_AMIGAOS3
+	if (!logFile) {
     	logFile = fopen("SDL_log.txt", "w");
         if (logFile) {
-            //setbuf(logFile, NULL);
-        	setvbuf(logFile, NULL, _IOLBF, 0);
+        	// No buffering
+            setbuf(logFile, NULL);
 
         	SDL_LogSetOutputFunction(AmigaLogOutput, NULL);
         }
     }
 
-#ifdef DEBUG
     SDL_LogSetAllPriority(SDL_LOG_PRIORITY_VERBOSE);
 #endif
 }
