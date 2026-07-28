@@ -49,7 +49,7 @@ static SDL_bool OS3_OpenTimerReq(int index, ULONG unit)
         CreateIORequest(timerPort, sizeof(struct timerequest));
     if (!timerReq[index]) return SDL_FALSE;
 
-    if (OpenDevice(TIMERNAME, unit, (struct IORequest *)timerReq[index], 0) != 0) {
+    if (OpenDevice((CONST_STRPTR)TIMERNAME, unit, (struct IORequest *)timerReq[index], 0) != 0) {
         DeleteIORequest((struct IORequest *)timerReq[index]);
         timerReq[index] = NULL;
         return SDL_FALSE;
@@ -149,7 +149,7 @@ void SDL_Delay(Uint32 ms)
 
     req = (struct timerequest *)CreateIORequest(port, sizeof(*req));
     if (req) {
-        if (OpenDevice(TIMERNAME, UNIT_MICROHZ, (struct IORequest *)req, 0) == 0) {
+        if (OpenDevice((CONST_STRPTR)TIMERNAME, UNIT_MICROHZ, (struct IORequest *)req, 0) == 0) {
             req->tr_node.io_Command  = TR_ADDREQUEST;
             req->tr_time.tv_secs     = ms / 1000;
             req->tr_time.tv_micro    = (ms % 1000) * 1000;

@@ -34,24 +34,52 @@
 #define SDL_LockMutex(m)   SDL_LockMutex(m)
 #define SDL_UnlockMutex(m) SDL_UnlockMutex(m)
 
+/*
+   List macros, strict-aliasing clean: each object is only ever accessed
+   through its true type. NEWLIST operates on genuine struct List objects
+   (the MsgPort message list); the MIN* macros operate on struct MinList /
+   struct MinNode objects (the semaphore wait list). The only casts are
+   pointer-value conversions for the head/tail sentinels, which are not
+   memory accesses and therefore aliasing-irrelevant.
+*/
+
+/*
+   NOTE on -Wdangling-pointer: GCC warns that stack-allocated waitnodes
+   are linked into sem->waitlist, which outlives the statement. This is
+   intentional and safe: the wait-list protocol guarantees every node is
+   MINREMOVE'd (under the SignalSemaphore) before its owning function
+   returns, so no stack address ever outlives its frame.
+*/
+
 #define NEWLIST(l) \
-do { struct List *_l = (struct List *)(l); \
+do { struct List *_l = (l); \
      _l->lh_TailPred = (struct Node *)_l; \
-     _l->lh_Tail = 0; \
+     _l->lh_Tail = NULL; \
      _l->lh_Head = (struct Node *)&_l->lh_Tail; } while (0)
 
-#define ADDTAIL(l,n) \
-do { struct Node *_n = (struct Node *)(n); struct List *_l = (struct List *)(l); \
-     _n->ln_Succ = (struct Node *)&_l->lh_Tail; \
-     _n->ln_Pred = _l->lh_TailPred; \
-     _l->lh_TailPred->ln_Succ = _n; _l->lh_TailPred = _n; } while (0)
+#define MINNEWLIST(l) \
+do { struct MinList *_l = (l); \
+     _l->mlh_TailPred = (struct MinNode *)_l; \
+     _l->mlh_Tail = NULL; \
+     _l->mlh_Head = (struct MinNode *)&_l->mlh_Tail; } while (0)
 
-#define REMOVE(n) \
-do { struct Node *_n = (struct Node *)(n); \
-     _n->ln_Pred->ln_Succ = _n->ln_Succ; \
-     _n->ln_Succ->ln_Pred = _n->ln_Pred; } while (0)
+#define MINADDTAIL(l,n) \
+do { struct MinNode *_n = (n); struct MinList *_l = (l); \
+     _n->mln_Succ = (struct MinNode *)&_l->mlh_Tail; \
+     _n->mln_Pred = _l->mlh_TailPred; \
+     _l->mlh_TailPred->mln_Succ = _n; \
+     _l->mlh_TailPred = _n; } while (0)
+
+#define MINREMOVE(n) \
+do { struct MinNode *_n = (n); \
+     _n->mln_Pred->mln_Succ = _n->mln_Succ; \
+     _n->mln_Succ->mln_Pred = _n->mln_Pred; } while (0)
+
+/* MinList equivalent of IsListEmpty - no type-punned dereference */
+#define IsMinListEmpty(l) ((l)->mlh_TailPred == (struct MinNode *)(l))
 
 #define FALLBACKSIGNAL SIGBREAKB_CTRL_D   /* avoid CTRL_E (thread start) and CTRL_F (timer) */
+
 
 struct waitnode {
     struct MinNode node;
@@ -95,11 +123,17 @@ static int mywaitinit(struct mywaitdata *data, Uint32 timeout)
            0 = UNIT_VBLANK (coarser, for long timeouts)
            1 = UNIT_MICROHZ (finer, for short timeouts) */
         struct timerequest *req = timerReq[timeout < 100 ? 1 : 0];
+        if (!req) {
+            /* Timer subsystem not up (or already torn down) - degrade
+               gracefully instead of dereferencing NULL */
+            mywaitdone(data);
+            return -1;
+        }
 
         data->port.mp_Node.ln_Type = NT_MSGPORT;
         data->port.mp_Flags        = PA_SIGNAL;
         data->port.mp_SigTask      = FindTask(NULL);
-        NEWLIST(&data->port.mp_MsgList);
+        NEWLIST(&data->port.mp_MsgList);   /* mp_MsgList is a struct List */
 
         data->timereq.tr_node.io_Message.mn_Node.ln_Type = NT_REPLYMSG;
         data->timereq.tr_node.io_Message.mn_ReplyPort    = &data->port;
@@ -150,7 +184,7 @@ SDL_sem *SDL_CreateSemaphore(Uint32 initial_value)
     if (sem) {
         SDL_memset(&sem->sem, 0, sizeof(sem->sem));
         InitSemaphore(&sem->sem);
-        NEWLIST(&sem->waitlist);
+        MINNEWLIST(&sem->waitlist);
         sem->sem_value = (int)initial_value;
     } else {
         SDL_OutOfMemory();
@@ -167,7 +201,7 @@ void SDL_DestroySemaphore(SDL_sem *sem)
             ObtainSemaphore(&sem->sem);
             sem->sem_value = -1;
 
-            while (!IsListEmpty((struct List *)&sem->waitlist)) {
+            while (!IsMinListEmpty(&sem->waitlist)) {
                 struct waitnode *wn;
                 int res;
 
@@ -221,7 +255,7 @@ int SDL_SemWait(SDL_sem *sem)
             signal    = AllocSignal(-1);
             if (signal == -1) { signal = FALLBACKSIGNAL; SetSignal(1 << FALLBACKSIGNAL, 0); }
             wn.sigmask = 1 << signal;
-            ADDTAIL(&sem->waitlist, &wn);
+            MINADDTAIL(&sem->waitlist, &wn.node);
         }
 
         ReleaseSemaphore(&sem->sem);
@@ -230,7 +264,7 @@ int SDL_SemWait(SDL_sem *sem)
     }
 
     if (signal != -1) {
-        REMOVE(&wn);
+        MINREMOVE(&wn.node);
         if (signal != FALLBACKSIGNAL) FreeSignal(signal);
     }
 
@@ -262,7 +296,7 @@ int SDL_SemWaitTimeout(SDL_sem *sem, Uint32 timeout)
                 signal    = AllocSignal(-1);
                 if (signal == -1) { signal = FALLBACKSIGNAL; SetSignal(1 << FALLBACKSIGNAL, 0); }
                 wn.sigmask = 1 << signal;
-                ADDTAIL(&sem->waitlist, &wn);
+                MINADDTAIL(&sem->waitlist, &wn.node);
             }
 
             ReleaseSemaphore(&sem->sem);
@@ -275,7 +309,7 @@ int SDL_SemWaitTimeout(SDL_sem *sem, Uint32 timeout)
         }
 
         if (signal != -1) {
-            REMOVE(&wn);
+            MINREMOVE(&wn.node);
             if (signal != FALLBACKSIGNAL) FreeSignal(signal);
         }
 

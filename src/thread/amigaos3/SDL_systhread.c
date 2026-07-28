@@ -94,7 +94,7 @@ int SDL_SYS_CreateThread(SDL_Thread *thread)
     /* Clear both start and done signals before spawning */
     SetSignal(0L, SIGBREAKF_CTRL_E | (1L << hdl->doneSigBit));
 
-    SDL_snprintf(argBuffer, sizeof(argBuffer), "%d", (LONG)hdl);
+    SDL_snprintf(argBuffer, sizeof(argBuffer), "%ld", (LONG)hdl);
 
     threadId++;
     if (thread->name) {
@@ -109,7 +109,7 @@ int SDL_SYS_CreateThread(SDL_Thread *thread)
         NP_Name,        (ULONG)nameBuffer,
         NP_CloseOutput, FALSE,
         NP_CloseInput,  FALSE,
-        NP_StackSize,   thread->stacksize ? (ULONG)thread->stacksize : 65536UL,
+        NP_StackSize,   thread->stacksize ? (ULONG)thread->stacksize : 262144UL,
         NP_Entry,       (ULONG)RunThread,
         NP_Arguments,   (ULONG)argBuffer,
         TAG_DONE);
