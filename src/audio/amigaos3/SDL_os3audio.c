@@ -51,7 +51,7 @@ static SDL_bool OS3_OpenAhiDevice(OS3AudioData * os3data)
         if (os3data->ahiRequest[0]) {
             os3data->ahiRequest[0]->ahir_Version = 4;
 
-            if (OpenDevice(AHINAME, AHI_DEFAULT_UNIT, (struct IORequest *)os3data->ahiRequest[0], 0) == 0) {
+            if (OpenDevice((CONST_STRPTR)AHINAME, AHI_DEFAULT_UNIT, (struct IORequest *)os3data->ahiRequest[0], 0) == 0) {
                 /* Create a duplicate request using public memory for double buffering */
                 os3data->ahiRequest[1] = (struct AHIRequest *)AllocVec(sizeof(struct AHIRequest), MEMF_PUBLIC);
 
@@ -60,17 +60,19 @@ static SDL_bool OS3_OpenAhiDevice(OS3AudioData * os3data)
                     os3data->deviceOpen = SDL_TRUE;
                     os3data->currentBuffer = 0;
                     os3data->link = NULL;
+                    os3data->requestSent[0] = SDL_FALSE;
+                    os3data->requestSent[1] = SDL_FALSE;
                 } else {
                     CloseDevice((struct IORequest *)os3data->ahiRequest[0]);
                 }
             }
-            
+
             if (!os3data->deviceOpen) {
                 DeleteIORequest((struct IORequest *)os3data->ahiRequest[0]);
                 os3data->ahiRequest[0] = NULL;
             }
         }
-        
+
         if (!os3data->deviceOpen) {
             DeleteMsgPort(os3data->ahiReplyPort);
             os3data->ahiReplyPort = NULL;
@@ -83,9 +85,26 @@ static SDL_bool OS3_OpenAhiDevice(OS3AudioData * os3data)
 static void OS3_CloseAhiDevice(OS3AudioData * os3data)
 {
     if (os3data->ahiRequest[0]) {
-        if (os3data->link) {
-            AbortIO((struct IORequest *)os3data->link);
-            WaitIO((struct IORequest *)os3data->link);
+        int i;
+
+        /* Abort and reap BOTH potentially in-flight requests.
+           With double buffering, both slots can be pending at
+           shutdown; reaping only the newest (link) can leave a
+           reply message on the port, and deleting a MsgPort with
+           pending messages is undefined behaviour on AmigaOS. */
+        for (i = 0; i < 2; i++) {
+            if (os3data->ahiRequest[i] && os3data->requestSent[i]) {
+                AbortIO((struct IORequest *)os3data->ahiRequest[i]);
+                WaitIO((struct IORequest *)os3data->ahiRequest[i]);
+                os3data->requestSent[i] = SDL_FALSE;
+            }
+        }
+
+        os3data->link = NULL;
+
+        /* Drain any stale replies before deleting the port */
+        while (GetMsg(os3data->ahiReplyPort) != NULL) {
+            /* just drain */
         }
 
         CloseDevice((struct IORequest *)os3data->ahiRequest[0]);
@@ -194,7 +213,7 @@ static int OS3_OpenDevice(_THIS, const char * devname)
     SDL_CalculateAudioSpec(&_this->spec);
 
     os3data->audioBufferSize = _this->spec.size;
-    
+
     /* Strict AmigaOS requirement: Sound buffers must be in public memory */
     os3data->audioBuffer[0] = (Uint8 *) AllocVec(_this->spec.size, MEMF_PUBLIC | MEMF_CLEAR);
     os3data->audioBuffer[1] = (Uint8 *) AllocVec(_this->spec.size, MEMF_PUBLIC | MEMF_CLEAR);
@@ -231,6 +250,7 @@ static void OS3_PlayDevice(_THIS)
     SDL_AudioSpec      *spec    = &_this->spec;
     OS3AudioData       *os3data = _this->hidden;
     int                 current = os3data->currentBuffer;
+    int                 previous = OS3_SwapBuffer(current);
 
     if (!os3data->deviceOpen) {
         return;
@@ -238,7 +258,7 @@ static void OS3_PlayDevice(_THIS)
 
     ahiRequest = os3data->ahiRequest[current];
 
-    ahiRequest->ahir_Std.io_Message.mn_Node.ln_Pri = 60;
+    ahiRequest->ahir_Std.io_Message.mn_Node.ln_Pri = 0;
     ahiRequest->ahir_Std.io_Data    = os3data->audioBuffer[current];
     ahiRequest->ahir_Std.io_Length  = os3data->audioBufferSize;
     ahiRequest->ahir_Std.io_Offset  = 0;
@@ -250,9 +270,11 @@ static void OS3_PlayDevice(_THIS)
     ahiRequest->ahir_Type           = os3data->ahiType;
 
     SendIO((struct IORequest *)ahiRequest);
+    os3data->requestSent[current] = SDL_TRUE;
 
     if (os3data->link) {
         WaitIO((struct IORequest *)os3data->link);
+        os3data->requestSent[previous] = SDL_FALSE;
     }
 
     os3data->link = ahiRequest;

@@ -18,14 +18,6 @@
      misrepresented as being the original software.
   3. This notice may not be removed or altered from any source distribution.
 */
-/*
-  Simple DirectMedia Layer
-  Copyright (C) 1997-2024 Sam Lantinga <slouken@libsdl.org>
-
-  This software is provided 'as-is', without any express or implied
-  warranty.  In no event will the authors be held liable for any damages
-  arising from the use of this software.
-*/
 #ifndef _SDL_os3audio_h
 #define _SDL_os3audio_h
 
@@ -44,8 +36,13 @@ struct SDL_PrivateAudioData
     struct MsgPort       *ahiReplyPort;
     struct AHIRequest    *ahiRequest[2];
     ULONG                 ahiType;
-    int                   currentBuffer; // buffer number to fill
-    struct AHIRequest    *link;          // point to previous I/O request sent
+    int                   currentBuffer;   /* buffer number to fill */
+    struct AHIRequest    *link;            /* previous I/O request sent */
+
+    /* Tracks which requests are in flight (sent via SendIO but not
+       yet reaped with WaitIO). Needed for safe shutdown: both slots
+       can be pending simultaneously with double buffering. */
+    SDL_bool              requestSent[2];
 
     SDL_bool              deviceOpen;
     Uint32                audioBufferSize;
@@ -55,4 +52,3 @@ struct SDL_PrivateAudioData
 typedef struct SDL_PrivateAudioData OS3AudioData;
 
 #endif /* _SDL_os3audio_h */
-
