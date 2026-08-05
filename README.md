@@ -7,6 +7,6 @@ are now working I think.
 
 I did this library to enable me to update some of my old SDL 1.2 ports like Exult and FreeSynd which are now SDL2 only.
 
-For performance and simplicity, only 24/32-bit RTG modes are supported.
+For performance and simplicity, only 32-bit RTG modes are supported.
 
 This library will only be of practical use running on a PiStorm 4.
