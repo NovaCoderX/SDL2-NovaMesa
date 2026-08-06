@@ -390,6 +390,10 @@ void OS3_WarpSystemPointerAbsolute(int x, int y)
 		inputRequest->io_Data    = (APTR)&ie;
 		inputRequest->io_Length  = sizeof(ie);
 		DoIO((struct IORequest *)inputRequest);
+
+	    // Put io_Data back where IND_ADDHANDLER left it, otherwise IND_REMHANDLER
+	    // will not find the handler at shutdown and we leave a dangling interrupt.
+	    inputRequest->io_Data = (APTR)inputHandler;
     }
 }
 
@@ -503,9 +507,11 @@ static void IN_ShutdownInputHandler(void)
 	SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "[IN_ShutdownInputHandler]: Shutting down the input handler\n");
 
 	if (inputRequest) {
+		// IND_REMHANDLER finds the handler to remove through io_Data, so make
+		// sure it is still pointing at our Interrupt (a warp borrows it).
+		inputRequest->io_Data = (APTR)inputHandler;
 		inputRequest->io_Command = IND_REMHANDLER;
-		inputRequest->io_Data    = (APTR)inputHandler;   /* identify which handler */
-		DoIO((struct IORequest*)inputRequest);
+		DoIO((struct IORequest *)inputRequest);
 
 		CloseDevice((struct IORequest*)inputRequest);
 		DeleteStdIO(inputRequest);
