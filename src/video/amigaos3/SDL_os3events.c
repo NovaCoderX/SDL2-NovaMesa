@@ -155,7 +155,6 @@ static void OS3_DetectNumLock(const SDL_Scancode s)
     }
 }
 
-
 static int OS3_GetButtonState(UWORD code)
 {
     return (code & IECODE_UP_PREFIX) ? SDL_RELEASED : SDL_PRESSED;
