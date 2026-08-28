@@ -144,7 +144,7 @@ int OS3_GL_SetSwapInterval(_THIS, int interval)
 
 int OS3_GL_GetSwapInterval(_THIS)
 {
-    // Returns 0 if there is no vertical retrace synchronization.
+    // Returns 0 if there is no vertical retrace synchronisation.
 	return 0;
 }
 

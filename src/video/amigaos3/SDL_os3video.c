@@ -30,6 +30,8 @@
 #include <proto/icon.h>
 #include <proto/keymap.h>
 #include <proto/dos.h>
+#include <proto/Picasso96.h>
+#include <libraries/Picasso96.h>
 
 #include "SDL_video.h"
 #include "SDL_hints.h"
@@ -57,7 +59,69 @@
 static int OS3_VideoInit(_THIS);
 static void OS3_VideoQuit(_THIS);
 
-struct Library* CyberGfxBase = NULL;
+
+// Kept as defines so the library name only has to be changed in one place.
+#define P96_LIBRARY_NAME "Picasso96API.library"
+#define P96_LIBRARY_VERSION 2
+
+struct Library *P96Base = NULL;
+
+SDL_bool isP96Mode(ULONG modeId) {
+	if (modeId == INVALID_ID) {
+		return SDL_FALSE;
+	}
+
+	return p96GetModeIDAttr(modeId, P96IDA_ISP96) ? SDL_TRUE : SDL_FALSE;
+}
+
+SDL_bool isUsableP96Mode(ULONG modeId) {
+	if (!isP96Mode(modeId)) {
+		return SDL_FALSE;
+	}
+
+	if (ModeNotAvailable(modeId)) {
+		return SDL_FALSE;
+	}
+
+	return SDL_TRUE;
+}
+
+SDL_bool isPixelFormat32(ULONG pixelFormat) {
+	switch (pixelFormat)
+	{
+		case RGBFB_A8R8G8B8:
+		case RGBFB_A8B8G8R8:
+		case RGBFB_R8G8B8A8:
+		case RGBFB_B8G8R8A8:
+			return SDL_TRUE;
+
+		default:
+			return SDL_FALSE;
+	}
+}
+
+ULONG getP96Mode32(int width, int height) {
+	ULONG modeId = INVALID_ID;
+	ULONG nextid = NextDisplayInfo(INVALID_ID);
+
+	while (nextid != INVALID_ID) {
+		if (isUsableP96Mode(nextid)) {
+			if (isPixelFormat32(p96GetModeIDAttr(nextid, P96IDA_RGBFORMAT))) {
+				if (p96GetModeIDAttr(nextid, P96IDA_WIDTH) == (ULONG)width) {
+					if (p96GetModeIDAttr(nextid, P96IDA_HEIGHT) == (ULONG)height) {
+						// Success, exact match.
+						modeId = nextid;
+						break;
+					}
+				}
+			}
+		}
+
+		nextid = NextDisplayInfo(nextid);
+	}
+
+	return modeId;
+}
 
 static void OS3_FindApplicationName(_THIS) {
 	SDL_VideoData* data = (SDL_VideoData*) _this->driverdata;
@@ -241,13 +305,13 @@ OS3_ShowMessageBox
 int OS3_VideoInit(_THIS) {
 	SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "OS3_VideoInit() - Called\n");
 
-	CyberGfxBase = OpenLibrary((STRPTR )"cybergraphics.library", 0);
-	if (!CyberGfxBase) {
-		return SDL_SetError("Cannot open cybergraphics.library\n");
+	P96Base = OpenLibrary((CONST_STRPTR)P96_LIBRARY_NAME, P96_LIBRARY_VERSION);
+	if (!P96Base) {
+		return SDL_SetError("Can't open " P96_LIBRARY_NAME);
 	}
 
 	if (OS3_InitModes(_this) < 0) {
-		return SDL_SetError("Failed to initialize modes");
+		return SDL_SetError("Failed to initialize display modes");
 	}
 
 	OS3_InitKeyboard(_this);
@@ -283,9 +347,9 @@ void OS3_VideoQuit(_THIS) {
 	OS3_QuitKeyboard(_this);
 	OS3_QuitModes(_this);
 
-	if (CyberGfxBase) {
-		CloseLibrary(CyberGfxBase);
-		CyberGfxBase = NULL;
+	if (P96Base) {
+		CloseLibrary(P96Base);
+		P96Base = NULL;
 	}
 }
 

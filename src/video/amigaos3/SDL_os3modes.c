@@ -24,8 +24,8 @@
 
 #include <proto/graphics.h>
 #include <proto/intuition.h>
-#include <proto/cybergraphics.h>
-#include <cybergraphx/cybergraphics.h>
+#include <proto/Picasso96.h>
+#include <libraries/Picasso96.h>
 
 #include "SDL_os3video.h"
 #include "SDL_os3modes.h"
@@ -42,17 +42,17 @@
 static SDL_bool OS3_GetDisplayModeData(ULONG modeId, SDL_DisplayMode* mode, SDL_bool desktopMode)
 {
     SDL_DisplayModeData *data;
-    ULONG width, height, depth;
+    ULONG width, height, pixelFormat;
     SDL_bool validMode = SDL_FALSE;
 
     // We are only interested in RTG modes.
-    if (IsCyberModeID(modeId)) {
-    	width = GetCyberIDAttr(CYBRIDATTR_WIDTH, modeId);
-    	height = GetCyberIDAttr(CYBRIDATTR_HEIGHT, modeId);
-    	depth = GetCyberIDAttr(CYBRIDATTR_DEPTH, modeId);
+    if (isUsableP96Mode(modeId)) {
+    	width = p96GetModeIDAttr(modeId, P96IDA_WIDTH);
+    	height = p96GetModeIDAttr(modeId, P96IDA_HEIGHT);
+    	pixelFormat = p96GetModeIDAttr(modeId, P96IDA_RGBFORMAT);
 
-        // We only support 24/32-bit modes.
-    	if (depth >= 24) {
+        // We only support 32-bit modes.
+    	if (isPixelFormat32(pixelFormat)) {
     		validMode = SDL_TRUE;
     	}
 
@@ -124,9 +124,9 @@ void OS3_GetDisplayModes(_THIS, SDL_VideoDisplay* display)
             if (SDL_AddDisplayMode(display, &mode)) {
             	ULONG width, height, depth;
 
-            	width = GetCyberIDAttr(CYBRIDATTR_WIDTH, nextid);
-            	height = GetCyberIDAttr(CYBRIDATTR_HEIGHT, nextid);
-            	depth = GetCyberIDAttr(CYBRIDATTR_DEPTH, nextid);
+            	width = p96GetModeIDAttr(nextid, P96IDA_WIDTH);
+            	height = p96GetModeIDAttr(nextid, P96IDA_HEIGHT);
+            	depth = p96GetModeIDAttr(nextid, P96IDA_DEPTH);
 
             	SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "Added display mode: %lu - width=%lu, height=%lu, depth=%lu\n",
             			nextid, width, height, depth);
@@ -143,9 +143,9 @@ int OS3_SetDisplayMode(_THIS, SDL_VideoDisplay* display, SDL_DisplayMode* mode)
 	SDL_DisplayModeData* modeData = (SDL_DisplayModeData*)mode->driverdata;
     ULONG width, height, depth;
 
-	width = GetCyberIDAttr(CYBRIDATTR_WIDTH, modeData->modeId);
-	height = GetCyberIDAttr(CYBRIDATTR_HEIGHT, modeData->modeId);
-	depth = GetCyberIDAttr(CYBRIDATTR_DEPTH, modeData->modeId);
+	width = p96GetModeIDAttr(modeData->modeId, P96IDA_WIDTH);
+	height = p96GetModeIDAttr(modeData->modeId, P96IDA_HEIGHT);
+	depth = p96GetModeIDAttr(modeData->modeId, P96IDA_DEPTH);
 
 	SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "Requested display mode: %lu - width=%lu, height=%lu, depth=%lu\n",
 			modeData->modeId, width, height, depth);
@@ -166,7 +166,7 @@ int OS3_InitModes(_THIS)
 
     publicScreen = OS3_LockPublicScreen();
     if (!publicScreen) {
-        return SDL_SetError("Could not get display mode data for the public screen");
+        return SDL_SetError("Could not setup display modes, could not lock the public screen");
     }
 
     modeId = GetVPModeID(&publicScreen->ViewPort);
@@ -176,13 +176,13 @@ int OS3_InitModes(_THIS)
 
     if (!OS3_GetDisplayModeData(modeId, &current_mode, SDL_TRUE)) {
         SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "Failed to get display mode data for the public screen\n");
-        return SDL_SetError("Could not get display mode data for the public screen");
+        return SDL_SetError("Could not setup display modes, Workbench needs to be using a 32-bit screen");
     } else {
     	ULONG width, height, depth;
 
-    	width = GetCyberIDAttr(CYBRIDATTR_WIDTH, modeId);
-    	height = GetCyberIDAttr(CYBRIDATTR_HEIGHT, modeId);
-    	depth = GetCyberIDAttr(CYBRIDATTR_DEPTH, modeId);
+    	width = p96GetModeIDAttr(modeId, P96IDA_WIDTH);
+    	height = p96GetModeIDAttr(modeId, P96IDA_HEIGHT);
+    	depth = p96GetModeIDAttr(modeId, P96IDA_DEPTH);
 
     	SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "Public screen display mode: %lu - width=%lu, height=%lu, depth=%lu\n",
     			modeId,  width, height, depth);

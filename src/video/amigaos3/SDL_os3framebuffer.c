@@ -23,8 +23,8 @@
 #if SDL_VIDEO_DRIVER_AMIGAOS3
 
 #include <proto/exec.h>
-#include <proto/cybergraphics.h>
-#include <cybergraphx/cybergraphics.h>
+#include <proto/Picasso96.h>
+#include <libraries/Picasso96.h>
 
 #include "SDL_os3video.h"
 #include "SDL_os3window.h"
@@ -67,6 +67,7 @@ int OS3_UpdateWindowFramebuffer(_THIS, SDL_Window* sdlwin,
     SDL_WindowData* data = (SDL_WindowData*)sdlwin->driverdata;
     SDL_Surface* surface = sdlwin->surface;
     int i, dirtyStart, dirtyEnd;
+    struct RenderInfo renderInfo;
 
     if (!data->syswin || !surface) {
         return 0;
@@ -92,18 +93,21 @@ int OS3_UpdateWindowFramebuffer(_THIS, SDL_Window* sdlwin,
     SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "Blitting dirty strip - start=%d, end=%d\n", dirtyStart, dirtyEnd);
 #endif
 
-    WritePixelArray(
-        (UBYTE*)surface->pixels,
-        0,                                      /* SrcX  */
-        dirtyStart,                             /* SrcY  */
-        surface->pitch,                         /* SrcMod */
-        data->syswin->RPort,                    /* RastPort */
-        data->syswin->BorderLeft,               /* DestX */
-        data->syswin->BorderTop + dirtyStart,   /* DestY */
-        sdlwin->w,                              /* SizeX */
-        dirtyEnd - dirtyStart,                  /* SizeY */
-        RECTFMT_ARGB                            /* SrcFormat */
-    );
+	// The surface is ARGB, P96 converts to whatever the screen is
+	// really using on the way out.
+	renderInfo.Memory = (APTR)surface->pixels;
+	renderInfo.BytesPerRow = (WORD)surface->pitch;
+	renderInfo.pad = 0;
+	renderInfo.RGBFormat = RGBFB_A8R8G8B8;
+
+	p96WritePixelArray(&renderInfo, //RenderInfo
+		0, //SrcX
+		dirtyStart, //SrcY
+		data->syswin->RPort, //RastPort
+		data->syswin->BorderLeft, //DestX
+		data->syswin->BorderTop + dirtyStart, //DestY
+		sdlwin->w, //SizeX
+		(dirtyEnd - dirtyStart)); //SizeY
 
     return 0;
 }

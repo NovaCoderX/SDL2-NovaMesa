@@ -32,10 +32,14 @@
 /* Private video data */
 typedef struct
 {
-	ULONG                  	appId;
-	STRPTR                  appName;
+	ULONG appId;
+	STRPTR appName;
 } SDL_VideoData;
 
+extern SDL_bool isP96Mode(ULONG modeId);
+extern SDL_bool isUsableP96Mode(ULONG modeId);
+extern SDL_bool isPixelFormat32(ULONG pixelFormat);
+extern ULONG getP96Mode32(int width, int height);
 
 #endif /* _SDL_os3video_h */
 
