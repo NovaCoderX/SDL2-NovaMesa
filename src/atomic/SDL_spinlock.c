@@ -48,6 +48,11 @@
 #include <libkern/OSAtomic.h>
 #endif
 
+#ifdef SDL_ATOMIC_DISABLED
+/* AmigaOS 3: see SDL_AtomicTryLock() */
+#include <proto/exec.h>
+#endif
+
 /* *INDENT-OFF* */ /* clang-format off */
 #if defined(__WATCOMC__) && defined(__386__)
 SDL_COMPILE_TIME_ASSERT(locksize, 4==sizeof(SDL_SpinLock));
@@ -64,13 +69,21 @@ extern __inline int _SDL_xchg_watcom(volatile int *a, int v);
 SDL_bool SDL_AtomicTryLock(SDL_SpinLock *lock)
 {
 #ifdef SDL_ATOMIC_DISABLED
-    /* Single-threaded OS3 build — no mutex needed, no race possible */
+    /* AmigaOS 3. Not single-threaded: the audio thread (and any SDL_Thread)
+       is an exec task of its own, and exec can switch tasks between the test
+       and the set. There's one CPU, so holding off task switching for those
+       few instructions makes them atomic. Forbid() doesn't stop interrupts,
+       but nothing takes an SDL spinlock from interrupt code. */
+    SDL_bool result = SDL_FALSE;
+
+    Forbid();
     if (*lock == 0) {
         *lock = 1;
-        return SDL_TRUE;
+        result = SDL_TRUE;
     }
+    Permit();
 
-    return SDL_FALSE;
+    return result;
 #elif defined(HAVE_GCC_ATOMICS) || defined(HAVE_GCC_SYNC_LOCK_TEST_AND_SET)
     return __sync_lock_test_and_set(lock, 1) == 0;
 
@@ -162,8 +175,15 @@ SDL_bool SDL_AtomicTryLock(SDL_SpinLock *lock)
 void SDL_AtomicLock(SDL_SpinLock *lock)
 {
 #ifdef SDL_ATOMIC_DISABLED
-    /* Single-threaded — TryLock always succeeds, loop never spins */
-	SDL_AtomicTryLock(lock);
+    /* AmigaOS 3: wait for the lock by sleeping, never by spinning. Exec
+       always runs the highest-priority ready task, so a task spinning here
+       would keep a lower-priority holder (the game, while the audio thread
+       runs at priority 5) from ever running to release it. SDL_Delay(0)
+       returns at once on this port, so it's 1 ms: the lock is only held for
+       a moment, and is rarely contended at all. */
+    while (!SDL_AtomicTryLock(lock)) {
+        SDL_Delay(1);
+    }
 #else
 	int iterations = 0;
     /* FIXME: Should we have an eventual timeout? */
@@ -181,7 +201,13 @@ void SDL_AtomicLock(SDL_SpinLock *lock)
 
 void SDL_AtomicUnlock(SDL_SpinLock *lock)
 {
-#if defined(HAVE_GCC_ATOMICS) || defined(HAVE_GCC_SYNC_LOCK_TEST_AND_SET)
+#ifdef SDL_ATOMIC_DISABLED
+    /* AmigaOS 3: one aligned store, which no task switch can split. The
+       barrier keeps the compiler from moving the locked work after it. */
+    SDL_CompilerBarrier();
+    *lock = 0;
+
+#elif defined(HAVE_GCC_ATOMICS) || defined(HAVE_GCC_SYNC_LOCK_TEST_AND_SET)
     __sync_lock_release(lock);
 
 #elif defined(_MSC_VER) && (defined(_M_ARM) || defined(_M_ARM64))

@@ -73,6 +73,8 @@
 
 #if defined(SDL_ATOMIC_DISABLED)
 #define EMULATE_CAS
+/* AmigaOS 3: see SDL_AtomicCAS() */
+#include <proto/exec.h>
 #endif
 
 SDL_bool SDL_AtomicCAS(SDL_atomic_t *a, int oldval, int newval)
@@ -89,13 +91,23 @@ SDL_bool SDL_AtomicCAS(SDL_atomic_t *a, int oldval, int newval)
 #elif defined(__SOLARIS__)
     return (SDL_bool)((int)atomic_cas_uint((volatile uint_t *)&a->value, (uint_t)oldval, (uint_t)newval) == oldval);
 #elif defined(EMULATE_CAS)
-    /* Single-threaded OS3 build — no mutex needed, no race possible */
+    /* AmigaOS 3. Not single-threaded: the audio thread (and any SDL_Thread)
+       is an exec task of its own, and exec can switch tasks between the
+       compare and the swap. There's one CPU, so holding off task switching
+       for those few instructions makes them atomic. Every other operation
+       here (Get, Set, Add, IncRef/DecRef) loops on this, so they're atomic
+       too. Forbid() doesn't stop interrupts, but nothing uses SDL atomics
+       from interrupt code. */
+    SDL_bool result = SDL_FALSE;
+
+    Forbid();
     if (a->value == oldval) {
         a->value = newval;
-        return SDL_TRUE;
+        result = SDL_TRUE;
     }
+    Permit();
 
-    return SDL_FALSE;
+    return result;
 #endif
 }
 
@@ -114,13 +126,17 @@ SDL_bool SDL_AtomicCASPtr(void **a, void *oldval, void *newval)
 #elif defined(__SOLARIS__)
     return (SDL_bool)(atomic_cas_ptr(a, oldval, newval) == oldval);
 #elif defined(EMULATE_CAS)
-    /* Single-threaded OS3 build — no mutex needed, no race possible */
+    /* AmigaOS 3: as SDL_AtomicCAS(). */
+    SDL_bool result = SDL_FALSE;
+
+    Forbid();
     if (*a == oldval) {
         *a = newval;
-        return SDL_TRUE;
+        result = SDL_TRUE;
     }
+    Permit();
 
-    return SDL_FALSE;
+    return result;
 #endif
 }
 
