@@ -217,8 +217,26 @@ static SDL_bool OS3_CreateSystemWindow(_THIS, SDL_Window* sdlwin, SDL_bool fulls
             screen = OS3_CreateCustomScreen(display->desktop_mode.w, display->desktop_mode.h);
         } else {
         	 // True FULLSCREEN: open screen at the requested game resolution.
-			SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "Trying to create a system window (fullscreen non-desktop mode)\n");
-            screen = OS3_CreateCustomScreen(sdlwin->w, sdlwin->h);
+			 //
+			 // That is the fullscreen mode SDL is switching to, which is not
+			 // always the window's current size. SDL creates a fullscreen
+			 // window windowed first, on the Workbench, and if it didn't fit
+			 // there (a 1024x768 window and its borders on a 1024x768
+			 // Workbench) Intuition shrank it and OS3_SyncWindowSize() copied
+			 // the smaller size into sdlwin->w/h. SDL only sets those to the
+			 // mode's size after this call, so opening the screen at them asks
+			 // getP96Mode32() for a size no mode has, and no screen opens.
+			SDL_DisplayMode mode;
+			int width = sdlwin->w;
+			int height = sdlwin->h;
+
+			if (SDL_GetWindowDisplayMode(sdlwin, &mode) == 0) {
+				width = mode.w;
+				height = mode.h;
+			}
+
+			SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "Trying to create a system window (fullscreen non-desktop mode) - width=%d, height=%d\n", width, height);
+			screen = OS3_CreateCustomScreen(width, height);
         }
     } else {
     	SDL_LogDebug(SDL_LOG_CATEGORY_VIDEO, "Trying to create a system window (windowed mode)\n");
