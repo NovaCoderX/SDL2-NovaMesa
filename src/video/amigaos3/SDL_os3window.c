@@ -312,22 +312,26 @@ static SDL_bool OS3_CreateSystemWindow(_THIS, SDL_Window* sdlwin, SDL_bool fulls
 	if (screen) {
 		// Need to set the custom screen black because it could be bigger than what was asked for.
 		ULONG blackPen = ObtainBestPen(screen->ViewPort.ColorMap, 0, 0, 0, TAG_DONE);
-		SetAPen(syswin->RPort, blackPen);
-		RectFill(syswin->RPort, 0, 0, syswin->Width - 1, syswin->Height - 1);
-		ReleasePen(screen->ViewPort.ColorMap, blackPen);
+		if (blackPen != -1) {
+			SetAPen(syswin->RPort, blackPen);
+			RectFill(syswin->RPort, 0, 0, syswin->Width - 1, syswin->Height - 1);
+			ReleasePen(screen->ViewPort.ColorMap, blackPen);
+		}
 	} else {
 		// In windowed mode on a public screen.
 		ULONG blackPen = ObtainBestPen(syswin->WScreen->ViewPort.ColorMap, 0, 0, 0, TAG_DONE);
-		SetAPen(syswin->RPort, blackPen);
+		if (blackPen != -1) {
+			SetAPen(syswin->RPort, blackPen);
 
-		// Fill only the inner window area to preserve window borders and gadgets.
-		RectFill(syswin->RPort,
-				 syswin->BorderLeft,
-				 syswin->BorderTop,
-				 syswin->Width - syswin->BorderRight - 1,
-				 syswin->Height - syswin->BorderBottom - 1);
+			// Fill only the inner window area to preserve window borders and gadgets.
+			RectFill(syswin->RPort,
+					 syswin->BorderLeft,
+					 syswin->BorderTop,
+					 syswin->Width - syswin->BorderRight - 1,
+					 syswin->Height - syswin->BorderBottom - 1);
 
-		ReleasePen(syswin->WScreen->ViewPort.ColorMap, blackPen);
+			ReleasePen(syswin->WScreen->ViewPort.ColorMap, blackPen);
+		}
 	}
 
 	// Setup the window data structure.
