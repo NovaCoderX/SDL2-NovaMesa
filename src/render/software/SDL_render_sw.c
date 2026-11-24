@@ -1037,6 +1037,12 @@ SDL_Renderer *SW_CreateRendererForSurface(SDL_Surface *surface)
     renderer->DestroyTexture = SW_DestroyTexture;
     renderer->DestroyRenderer = SW_DestroyRenderer;
     renderer->info = SW_RenderDriver.info;
+
+#ifdef __AMIGA__
+    renderer->info.max_texture_width = 4096;
+    renderer->info.max_texture_height = 4096;
+#endif
+
     renderer->driverdata = data;
 
     return renderer;
