@@ -82,7 +82,7 @@ static BOOL OS3_MakePath(const char *path)
         if (err == ERROR_OBJECT_EXISTS) {
             success = TRUE;   /* already there — that's fine */
         } else {
-            SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "CreateDir '%s' failed (err %d)\n", temp, err);
+            SDL_LogDebug(SDL_LOG_CATEGORY_APPLICATION, "CreateDir '%s' failed (err %ld)\n", temp, err);
             success = FALSE;
         }
     }
